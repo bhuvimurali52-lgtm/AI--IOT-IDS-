@@ -1,0 +1,29 @@
+# Core
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+pydantic>=2.7.0
+pydantic-settings>=2.3.0
+python-dotenv>=1.0.0
+
+# Dashboard
+streamlit>=1.36.0
+plotly>=5.22.0
+
+# Data / ML
+pandas>=2.2.0
+numpy>=1.26.0
+scikit-learn>=1.5.0
+joblib>=1.4.0
+shap>=0.45.0  # later phases
+
+# Packet capture (used in later phases)
+scapy>=2.5.0
+
+# HTTP client (FastAPI TestClient)
+httpx>=0.27.0
+
+# Testing
+pytest>=8.2.0
+
+# Optional DB support for later phases
+sqlalchemy>=2.0.0

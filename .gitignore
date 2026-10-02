@@ -1,0 +1,83 @@
+# Byte-compiled / cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Environment and secrets
+.env
+.env.local
+*.pem
+*.key
+secrets/
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+
+# Testing / coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
+
+# Type checkers / linters
+.mypy_cache/
+.ruff_cache/
+.pytype/
+
+# IDE / editor
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs and runtime
+logs/*.log
+*.log
+
+# Local databases
+*.db
+*.sqlite
+*.sqlite3
+
+# ML artifacts (keep directory, ignore trained weights)
+models/*
+!models/.gitkeep
+
+# Data (keep directory structure, ignore large/raw datasets)
+data/raw/*
+!data/raw/.gitkeep
+data/processed/*
+!data/processed/.gitkeep
+data/sample/*
+!data/sample/.gitkeep
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Docker
+*.pid
+
+# Streamlit
+.streamlit/secrets.toml
