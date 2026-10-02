@@ -23,6 +23,7 @@ from app.dashboard.components import (
     render_capture_controls,
     render_evaluation_panel,
     render_explanation_panel,
+    render_firewall_panel,
     render_flows_table,
     render_header,
     render_health_panel,
@@ -97,41 +98,64 @@ def main() -> None:
 
     refresh_seconds = int(filters["refresh_seconds"])
 
+    # Load once for header/status/controls so Capture Controls is not inside
+    # the auto-refresh fragment (which can duplicate that section).
+    api_online, status, model, flows_raw, alerts_raw, error = _safe_load(client)
+    if not api_online:
+        st.error(
+            "FastAPI offline. Start the API before using the dashboard:\n\n"
+            f"`uvicorn app.main:app --host 127.0.0.1 --port {settings.api_port}`"
+        )
+        render_system_state({}, api_online=False)
+        render_health_panel({}, api_online=False)
+        render_metric_cards(
+            {
+                "total_flows": 0,
+                "normal_flows": 0,
+                "anomalous_flows": 0,
+                "max_risk_score": 0,
+                "anomaly_rate": 0.0,
+            },
+            0,
+        )
+        left, right = st.columns(2)
+        with left:
+            render_capture_controls(client, {}, api_online=False)
+        with right:
+            render_synthetic_controls(client, api_online=False)
+        render_firewall_panel(client, api_online=False)
+        st.info("No network flows detected yet.")
+        st.info("No alerts detected.")
+        return
+
+    if error:
+        st.warning(error)
+
+    low_max = int(status.get("risk_low_max", settings.risk_low_max))
+    medium_max = int(status.get("risk_medium_max", settings.risk_medium_max))
+    high_max = int(status.get("risk_high_max", settings.risk_high_max))
+
+    render_system_state(status, api_online=True)
+    render_health_panel(status, api_online=True)
+
+    left, right = st.columns(2)
+    with left:
+        render_capture_controls(client, status, api_online=True)
+    with right:
+        render_synthetic_controls(client, api_online=True)
+    render_firewall_panel(client, api_online=True)
+
     def _render_body() -> None:
-        api_online, status, model, flows_raw, alerts_raw, error = _safe_load(client)
-        if not api_online:
-            st.error(
-                "FastAPI offline. Start the API before using the dashboard:\n\n"
-                f"`uvicorn app.main:app --host 127.0.0.1 --port {settings.api_port}`"
-            )
-            render_system_state({}, api_online=False)
-            render_health_panel({}, api_online=False)
-            render_metric_cards(
-                {
-                    "total_flows": 0,
-                    "normal_flows": 0,
-                    "anomalous_flows": 0,
-                    "max_risk_score": 0,
-                    "anomaly_rate": 0.0,
-                },
-                0,
-            )
-            st.info("No network flows detected yet.")
-            st.info("No alerts detected.")
-            return
-
-        if error:
-            st.warning(error)
-
-        low_max = int(status.get("risk_low_max", settings.risk_low_max))
-        medium_max = int(status.get("risk_medium_max", settings.risk_medium_max))
-        high_max = int(status.get("risk_high_max", settings.risk_high_max))
+        _api_online, _status, _model, flows_raw2, alerts_raw2, _error = _safe_load(client)
+        flows_src = flows_raw2 if _api_online else flows_raw
+        alerts_src = alerts_raw2 if _api_online else alerts_raw
+        model_src = _model or model
+        status_src = _status or status
 
         mode_filter = filters["mode"]
         api_mode = mode_filter if mode_filter in {"LIVE", "SYNTHETIC"} else None
-        # Prefer already-fetched lists; apply client-side filters for severity/time.
         flows = filter_records(
-            flows_raw,
+            flows_src,
             mode=mode_filter,
             severity=filters["severity"],
             time_range_label=filters["time_range"],
@@ -140,7 +164,7 @@ def main() -> None:
             high_max=high_max,
         )
         alerts = filter_records(
-            alerts_raw,
+            alerts_src,
             mode=mode_filter,
             severity=filters["severity"],
             time_range_label=filters["time_range"],
@@ -148,29 +172,20 @@ def main() -> None:
             medium_max=medium_max,
             high_max=high_max,
         )
-        # When Mode=LIVE, synthetic must not appear.
         if api_mode == "LIVE":
             flows = [f for f in flows if str(f.get("mode")).upper() == "LIVE"]
             alerts = [a for a in alerts if str(a.get("mode")).upper() == "LIVE"]
 
         metrics = summarize_metrics(flows)
-        render_system_state(status, api_online=True)
-        render_health_panel(status, api_online=True)
         render_metric_cards(metrics, alert_count=len(alerts))
 
-        if str(status.get("ids_mode", "")).lower() == "synthetic" or any(
+        if str(status_src.get("ids_mode", "")).lower() == "synthetic" or any(
             str(f.get("mode")).upper() == "SYNTHETIC" for f in flows[:20]
         ):
             st.warning(
                 "SYNTHETIC records may be present. They are local fixtures, "
                 "not real captured packets."
             )
-
-        left, right = st.columns(2)
-        with left:
-            render_capture_controls(client, status, api_online=True)
-        with right:
-            render_synthetic_controls(client, api_online=True)
 
         st.subheader("Analytics")
         c1, c2 = st.columns(2)
@@ -198,7 +213,7 @@ def main() -> None:
         render_flows_table(flows)
         render_explanation_panel(client, flows)
         render_evaluation_panel(client, api_online=True)
-        render_model_panel(model or status)
+        render_model_panel(model_src or status_src)
 
     if refresh_seconds > 0:
         try:

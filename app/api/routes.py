@@ -128,6 +128,22 @@ def api_evaluation(
         raise HTTPException(status_code=500, detail="Evaluation failed") from None
 
 
+@router.get("/api/firewall")
+def api_firewall() -> JSONResponse:
+    """Read-only Windows firewall security posture assessment."""
+    try:
+        payload = get_runtime().assess_firewall()
+    except Exception:  # noqa: BLE001
+        logger.exception("Firewall assessment failed")
+        raise HTTPException(
+            status_code=500, detail="Firewall assessment failed"
+        ) from None
+    status_code = 200
+    if str(payload.get("status")) == "incomplete":
+        status_code = 503
+    return JSONResponse(status_code=status_code, content=payload)
+
+
 @router.post("/api/capture/start")
 def api_capture_start(body: CaptureStartRequest | None = None) -> dict[str, Any]:
     """Start capture/detection according to IDS_MODE (or request override)."""

@@ -164,6 +164,10 @@ def test_dashboard_imports_and_unique_keys() -> None:
         "risk_distribution",
         "xai_contribution_chart",
         "eval_threshold_chart",
+        "start_live_capture_btn",
+        "stop_live_capture_btn",
+        "capture_refresh_btn",
+        "run_synthetic_test_btn",
     ]
     assert len(keys) == len(set(keys))
 

@@ -542,6 +542,13 @@ class IDSRuntime:
         self._last_evaluation = result
         return dict(result)
 
+    def assess_firewall(self) -> dict[str, Any]:
+        """Read-only Windows firewall posture assessment. Never changes rules."""
+        from app.firewall.checker import FirewallChecker, assessment_to_public_dict
+
+        assessment = FirewallChecker().assess()
+        return assessment_to_public_dict(assessment)
+
 
 _RUNTIME: IDSRuntime | None = None
 

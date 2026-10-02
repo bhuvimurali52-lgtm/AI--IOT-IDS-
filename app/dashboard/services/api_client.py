@@ -104,3 +104,15 @@ class DashboardAPIClient:
 
     def evaluation(self, *, force: bool = False) -> dict[str, Any]:
         return self._get("/api/evaluation", params={"force": bool(force)})
+
+    def firewall(self) -> dict[str, Any]:
+        """Read-only posture assessment. Accepts 200 or 503 JSON bodies."""
+        url = f"{self.base_url}/api/firewall"
+        with httpx.Client(timeout=max(self.timeout, 20.0)) as client:
+            response = client.get(url)
+        if response.status_code not in {200, 503}:
+            response.raise_for_status()
+        data = response.json()
+        if not isinstance(data, dict):
+            raise ValueError("Malformed firewall assessment response")
+        return data

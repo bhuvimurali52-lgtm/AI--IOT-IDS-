@@ -9,6 +9,7 @@ import pandas as pd
 import streamlit as st
 
 from app.dashboard.components.evaluation import render_evaluation_panel
+from app.dashboard.components.firewall import render_firewall_panel
 from app.dashboard.services.metrics import TIME_RANGE_MINUTES
 
 logger = logging.getLogger(__name__)
@@ -18,6 +19,7 @@ __all__ = [
     "render_capture_controls",
     "render_evaluation_panel",
     "render_explanation_panel",
+    "render_firewall_panel",
     "render_flows_table",
     "render_header",
     "render_health_panel",
@@ -128,6 +130,14 @@ def render_sidebar_filters() -> dict[str, Any]:
     }
 
 
+def _is_npcap_limitation_message(text: str) -> bool:
+    lowered = str(text or "").lower()
+    return any(
+        token in lowered
+        for token in ("npcap", "libpcap", "npc provider", "winpcap")
+    )
+
+
 def render_capture_controls(
     client: Any,
     status: Mapping[str, Any],
@@ -135,23 +145,39 @@ def render_capture_controls(
     api_online: bool,
 ) -> None:
     st.subheader("Capture Controls")
-    st.info(
-        "Live capture monitors traffic visible to the selected local network "
-        "interface. Use only on systems/networks you are authorized to monitor."
-    )
+    ids_mode = str(status.get("ids_mode") or "synthetic").lower()
+    live_mode = ids_mode == "live"
     iface = status.get("capture_interface") or "default"
     st.write(
         f"**Interface:** `{iface}`  |  "
         f"**Capture status:** `{'RUNNING' if status.get('capture_running') else 'STOPPED'}`  |  "
-        f"**Capture mode:** `{str(status.get('capture_mode') or status.get('ids_mode') or 'SYNTHETIC').upper()}`"
+        f"**Configured mode:** `{ids_mode.upper()}`"
     )
-    if status.get("last_capture_error"):
-        st.error(str(status["last_capture_error"]))
-        st.warning("Live capture unavailable — verify Npcap and permissions.")
+
+    if live_mode:
+        st.info(
+            "Live capture monitors traffic visible to the selected local network "
+            "interface. Use only on systems/networks you are authorized to monitor."
+        )
+        err = status.get("last_capture_error")
+        if err:
+            st.error(str(err))
+            if _is_npcap_limitation_message(str(err)):
+                st.warning("Live capture unavailable — verify Npcap and permissions.")
+    else:
+        st.info(
+            "SYNTHETIC mode does not require live packet capture or Npcap. "
+            "Use Synthetic Test for SAFE TEST fixtures."
+        )
 
     b1, b2, b3 = st.columns(3)
     with b1:
-        if st.button("START LIVE CAPTURE", use_container_width=True, disabled=not api_online):
+        if st.button(
+            "START LIVE CAPTURE",
+            key="start_live_capture_btn",
+            use_container_width=True,
+            disabled=not api_online,
+        ):
             try:
                 result = client.start_capture(
                     {
@@ -167,9 +193,10 @@ def render_capture_controls(
                 else:
                     err = result.get("error") or "Capture failed to start"
                     st.error(err)
-                    st.warning(
-                        "Live capture unavailable — verify Npcap and permissions."
-                    )
+                    if _is_npcap_limitation_message(str(err)):
+                        st.warning(
+                            "Live capture unavailable — verify Npcap and permissions."
+                        )
                 if result.get("authorization_notice"):
                     st.info(result["authorization_notice"])
             except Exception as exc:  # noqa: BLE001
@@ -180,7 +207,12 @@ def render_capture_controls(
                     "Live capture unavailable — verify Npcap and permissions."
                 )
     with b2:
-        if st.button("STOP LIVE CAPTURE", use_container_width=True, disabled=not api_online):
+        if st.button(
+            "STOP LIVE CAPTURE",
+            key="stop_live_capture_btn",
+            use_container_width=True,
+            disabled=not api_online,
+        ):
             try:
                 result = client.stop_capture()
                 if result.get("ok"):
@@ -192,7 +224,7 @@ def render_capture_controls(
                 st.error("Unable to stop capture.")
                 st.caption(str(exc))
     with b3:
-        if st.button("REFRESH NOW", use_container_width=True):
+        if st.button("REFRESH NOW", key="capture_refresh_btn", use_container_width=True):
             st.rerun()
 
 
@@ -201,7 +233,12 @@ def render_synthetic_controls(client: Any, *, api_online: bool) -> None:
     st.caption(
         "SAFE TEST — generates local fixtures only. Not real network traffic."
     )
-    if st.button("RUN SYNTHETIC TEST", use_container_width=True, disabled=not api_online):
+    if st.button(
+        "RUN SYNTHETIC TEST",
+        key="run_synthetic_test_btn",
+        use_container_width=True,
+        disabled=not api_online,
+    ):
         try:
             result = client.run_synthetic_test()
             preds = result.get("predictions") or []
