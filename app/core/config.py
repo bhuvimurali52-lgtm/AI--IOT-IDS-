@@ -45,7 +45,9 @@ class Settings(BaseSettings):
     dashboard_api_url: str = "http://127.0.0.1:8000"
 
     # CORS: comma-separated origins. Wildcard is rejected in production.
+    # Never pair wildcard origins with credentials.
     cors_allowed_origins: str = _DEV_CORS_DEFAULT
+    cors_allow_credentials: bool = False
 
     # Logging
     log_level: str = "INFO"
@@ -136,13 +138,17 @@ class Settings(BaseSettings):
             raise ValueError(
                 "Risk bounds must satisfy RISK_LOW_MAX < RISK_MEDIUM_MAX < RISK_HIGH_MAX"
             )
-        if self.app_env == "production":
-            origins = self.cors_origin_list()
-            if "*" in origins:
-                raise ValueError(
-                    "CORS_ALLOWED_ORIGINS must not include '*' in production. "
-                    "Set explicit origins (for example http://127.0.0.1:8502)."
-                )
+        origins = self.cors_origin_list()
+        if self.app_env == "production" and "*" in origins:
+            raise ValueError(
+                "CORS_ALLOWED_ORIGINS must not include '*' in production. "
+                "Set explicit origins (for example http://127.0.0.1:8502)."
+            )
+        if "*" in origins and bool(self.cors_allow_credentials):
+            raise ValueError(
+                "CORS credentials cannot be enabled with wildcard origins."
+            )
+        self.cors_allow_credentials = False
         return self
 
     @property

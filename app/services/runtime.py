@@ -454,12 +454,14 @@ class IDSRuntime:
         predictor = self.get_predictor()
         if predictor.detector is None or not predictor.detector.is_fitted:
             raise RuntimeError(
-                f"No fitted model at {self.settings.model_path}. "
-                "Cannot explain without a loaded IsolationForest."
+                "No fitted IsolationForest is loaded. Cannot explain this flow."
             )
 
+        from app.core.timing import log_duration
+
         try:
-            explanation = explain_anomaly(predictor.detector, feats)
+            with log_duration("xai_explain_flow"):
+                explanation = explain_anomaly(predictor.detector, feats)
         except ExplanationError as exc:
             raise ValueError(str(exc)) from exc
 
@@ -476,12 +478,57 @@ class IDSRuntime:
             "explanation": explanation,
         }
 
+    def readiness(self) -> dict[str, Any]:
+        """Runtime readiness without retraining or capturing packets."""
+        from pathlib import Path
+
+        model_path = Path(self.settings.model_path)
+        model_exists = model_path.exists()
+        model_loaded = False
+        database_available = False
+        try:
+            info = self.model_info()
+            model_loaded = bool(info.get("model_loaded")) and model_exists
+        except Exception:  # noqa: BLE001
+            logger.exception("Readiness model check failed")
+        try:
+            self.db.stats()
+            database_available = True
+        except Exception:  # noqa: BLE001
+            logger.warning("Readiness database check failed")
+
+        live_mode = str(self.settings.ids_mode).lower() == "live"
+        live_capture_required = live_mode
+        live_capture_available = False
+        if live_mode:
+            from app.capture.packet_capture import PacketCapture
+
+            live_preflight = PacketCapture.preflight_live()
+            live_capture_available = live_preflight is None
+        ready = bool(model_loaded and database_available)
+        return {
+            "ready": ready,
+            "alive": True,
+            "model_loaded": model_loaded,
+            "model_exists": model_exists,
+            "database_available": database_available,
+            "ids_mode": self.settings.ids_mode,
+            "live_capture_available": live_capture_available,
+            "live_capture_required": live_capture_required,
+            "note": (
+                "GET /ready checks whether the existing IsolationForest artifact "
+                "can be loaded and the database is reachable. It does not retrain. "
+                "GET /health is liveness only. Live capture is optional in synthetic mode."
+            ),
+        }
+
     def run_controlled_evaluation(self, *, force: bool = False) -> dict[str, Any]:
         """Run deterministic offline evaluation without retraining.
 
         Results are cached on the runtime so dashboards can fetch without
         regenerating on every refresh unless ``force=True``.
         """
+        from app.core.timing import log_duration
         from app.evaluation.evaluator import run_offline_evaluation
 
         if (
@@ -490,7 +537,8 @@ class IDSRuntime:
         ):
             return dict(self._last_evaluation)
 
-        result = run_offline_evaluation(model_path=self.settings.model_path)
+        with log_duration("offline_evaluation"):
+            result = run_offline_evaluation(model_path=self.settings.model_path)
         self._last_evaluation = result
         return dict(result)
 

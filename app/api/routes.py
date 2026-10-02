@@ -1,15 +1,33 @@
-"""HTTP routes for the IoT IDS API (Phase 1–7)."""
+"""HTTP routes for the IoT IDS API (Phase 1–8)."""
 
 from __future__ import annotations
 
+import logging
 from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
+from app.core.errors import filter_public_mapping, sanitize_public_message
 from app.services.runtime import get_runtime
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter()
+
+
+def _safe_http(
+    status_code: int,
+    message: str,
+    *,
+    fallback: str,
+) -> HTTPException:
+    logger.warning("API error status=%s", status_code)
+    return HTTPException(
+        status_code=status_code,
+        detail=sanitize_public_message(str(message), fallback=fallback),
+    )
 
 
 class CaptureStartRequest(BaseModel):
@@ -25,14 +43,22 @@ class CaptureStartRequest(BaseModel):
 
 @router.get("/health")
 def health() -> dict[str, str]:
-    """Liveness probe."""
+    """Liveness probe (process is up). Does not check model or database."""
     return {"status": "ok", "service": "iot-ids"}
+
+
+@router.get("/ready")
+def ready() -> JSONResponse:
+    """Readiness: model loadable and database reachable. Does not retrain."""
+    payload = filter_public_mapping(get_runtime().readiness())
+    status_code = 200 if payload.get("ready") else 503
+    return JSONResponse(status_code=status_code, content=payload)
 
 
 @router.get("/api/status")
 def api_status() -> dict[str, Any]:
     """Return IDS runtime status and counters."""
-    return get_runtime().status()
+    return filter_public_mapping(get_runtime().status())
 
 
 @router.get("/api/model")
@@ -74,13 +100,14 @@ def api_explanation(flow_id: int) -> dict[str, Any]:
     try:
         return runtime.explain_flow(flow_id)
     except KeyError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise _safe_http(404, str(exc), fallback="Flow not found") from exc
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise _safe_http(400, str(exc), fallback="Invalid explanation request") from exc
     except RuntimeError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=500, detail="Explanation failed") from exc
+        raise _safe_http(503, str(exc), fallback="Model is not available") from exc
+    except Exception:  # noqa: BLE001
+        logger.exception("Explanation failed")
+        raise HTTPException(status_code=500, detail="Explanation failed") from None
 
 
 @router.get("/api/evaluation")
@@ -95,9 +122,10 @@ def api_evaluation(
     try:
         return runtime.run_controlled_evaluation(force=force)
     except FileNotFoundError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=500, detail="Evaluation failed") from exc
+        raise _safe_http(503, str(exc), fallback="Model is not available") from exc
+    except Exception:  # noqa: BLE001
+        logger.exception("Evaluation failed")
+        raise HTTPException(status_code=500, detail="Evaluation failed") from None
 
 
 @router.post("/api/capture/start")
@@ -120,7 +148,8 @@ def api_capture_start(body: CaptureStartRequest | None = None) -> dict[str, Any]
     try:
         return runtime.start_capture()
     except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        logger.exception("Capture start failed")
+        raise _safe_http(500, str(exc), fallback="Capture start failed") from exc
 
 
 @router.post("/api/capture/stop")
@@ -135,4 +164,5 @@ def api_detection_test() -> dict[str, Any]:
     try:
         return get_runtime().run_detection_test()
     except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        logger.exception("Detection test failed")
+        raise _safe_http(500, str(exc), fallback="Detection test failed") from exc

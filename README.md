@@ -4,7 +4,7 @@ Defensive academic project: observe local/lab network traffic (or synthetic fixt
 aggregate flows, extract features, detect anomalies with Isolation Forest, score risk,
 alert, and visualize results.
 
-> **Current status: Phase 7 — controlled synthetic evaluation + XAI + SOC dashboard.**  
+> **Current status: Phase 8 — application hardening on the frozen Phase 7 baseline.**
 > Phase 3 IsolationForest artifact is reused (no auto-retrain).
 
 ## Project objective
@@ -123,6 +123,7 @@ Tables: `flows`, `alerts`, `model_metadata` in `DATABASE_PATH` (default `data/id
 
 ```text
 GET  /health
+GET  /ready
 GET  /api/status
 GET  /api/model
 GET  /api/alerts
@@ -135,6 +136,11 @@ POST /api/detection/test
 ```
 
 Inputs are validated. No arbitrary shell/command execution.
+
+`GET /health` is liveness only (`status=ok`). `GET /ready` reports whether the
+existing IsolationForest artifact can be loaded and the database is reachable.
+Readiness **does not retrain** the model. Live capture / Npcap is not required
+for readiness in synthetic mode.
 
 Phase 4 live path: Scapy callback enqueues packets → background worker aggregates
 flows → `FLOW_TIMEOUT_SECONDS` completes idle flows → `LiveDetector` scores once
@@ -154,6 +160,30 @@ An offline **threshold analysis** sweeps anomaly-score cutoffs for research
 visibility; it does **not** change the production IsolationForest threshold.
 
 This remains anomaly / deviation detection, not named-attack classification.
+
+## Phase 8 — Application hardening
+
+Phase 8 is **application hardening** for a defensive IDS research/prototype. It is
+**not** a production-security certification and does not change IsolationForest,
+XAI, or Phase 7 evaluation methodology.
+
+- **Public errors:** unexpected exceptions return a generic client message.
+  Tracebacks, absolute filesystem paths, and secret-like fragments are redacted
+  (`app/core/errors.py`). Technical detail is logged server-side.
+- **Health vs readiness:** `/health` means the API process is alive.
+  `/ready` means the existing model artifact can be loaded and SQLite is reachable.
+  Neither endpoint retrains the detector.
+- **CORS:** allowed origins come from `CORS_ALLOWED_ORIGINS` (default:
+  `http://127.0.0.1:8502` and `http://localhost:8502`). Credentials are disabled.
+  Wildcard origins are rejected in `APP_ENV=production`. This is not
+  credentials-enabled `Access-Control-Allow-Origin: *`.
+- **Timing:** `log_duration()` records local DEBUG timings for explanation and
+  offline evaluation. These are not published as scientific benchmarks.
+- **Secrets:** `.env` is not returned by the API. Configuration examples contain
+  placeholders only.
+
+Limitations: local lab prototype, no authn/authz gateway, SQLite file DB, joblib
+model load still trusts a local artifact, live capture still needs Npcap/admin.
 
 ## Streamlit dashboard
 
@@ -259,5 +289,5 @@ This local prototype:
 
 ## Security posture
 
-Observe → analyze → detect → log → alert.  
+Observe → analyze → detect → log → alert.
 No exploitation, credential theft, malware, evasion, or automatic host blocking.

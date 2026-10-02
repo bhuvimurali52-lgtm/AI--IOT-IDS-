@@ -58,7 +58,11 @@ app = FastAPI(
 
 _cors_origins = settings.cors_origin_list()
 if _cors_origins:
-    logger.info("CORS allow_origins=%s", _cors_origins)
+    logger.info(
+        "CORS allow_origins=%s allow_credentials=%s",
+        _cors_origins,
+        False,
+    )
     app.add_middleware(
         CORSMiddleware,
         allow_origins=_cors_origins,
