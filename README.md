@@ -1,35 +1,97 @@
 # AI-Powered IoT Intrusion Detection — Local-Lab Real-Time Prototype
 
-Defensive academic project: observe local/lab network traffic (or synthetic fixtures),
-aggregate flows, extract features, detect anomalies with Isolation Forest, score risk,
-alert, and visualize results.
+An AI-powered IoT security monitoring prototype that detects anomalous network
+behavior using an Isolation Forest model, assigns risk, generates alerts, provides
+local explainability, and performs read-only Windows Firewall security posture
+assessment through a SOC-style dashboard.
 
-> **Current status: Phase 8 — application hardening on the frozen Phase 7 baseline.**
-> Phase 3 IsolationForest artifact is reused (no auto-retrain).
+Defensive academic / competition prototype: observe authorized local/lab traffic
+(or synthetic fixtures), extract a fixed 11-feature vector, detect deviations from
+a learned baseline, score risk, alert, explain locally, and review host firewall
+posture. It is **not** a production-grade IDS, **not** an enterprise SIEM
+replacement, and **not** automatic attack prevention.
+
+> **Current status: Phase 10 — final integration and security-intelligence demo
+> on the frozen Phase 3–9 baseline.**
+> IsolationForest artifact is reused (no auto-retrain). Phase 7 metrics remain
+> controlled-synthetic only.
+
+## Project overview
+
+| | |
+|---|---|
+| **Problem** | IoT and lab networks need a transparent way to notice unusual flow behavior and review host firewall configuration without claiming named-attack detection or changing the host firewall. |
+| **Proposed solution** | A local pipeline: capture or synthetic fixtures → 11-feature extraction → Isolation Forest → risk/alerts → local XAI → read-only Windows Firewall posture → SOC dashboard. |
+| **Detection type** | Anomalous / deviation-from-baseline behavior, not comprehensive named-attack classification (DDoS, Mirai, malware families, etc.). |
+
+## Architecture
+
+```text
+IoT Traffic
+    ↓
+Capture / Synthetic Generator
+    ↓
+Feature Extraction
+    ↓
+StandardScaler (embedded with the saved model)
+    ↓
+Isolation Forest
+    ↓
+Anomaly Score
+    ↓
+Risk Scoring
+    ↓
+Alert Engine
+    ↓
+XAI (local_baseline_occlusion)
+    ↓
+SOC Dashboard
+```
+
+```text
+Windows Firewall
+    ↓
+Read-only Collector  (netsh advfirewall show allprofiles)
+    ↓
+Posture Analyzer
+    ↓
+Security Findings
+    ↓
+SOC Dashboard
+```
+
+Three distinct capabilities (do not conflate them):
+
+- **A. Network anomaly detection** — Isolation Forest on flow features.
+- **B. Explainability** — local baseline-occlusion of the anomaly score (not Shapley, not causal).
+- **C. Host firewall posture assessment** — read-only configuration review. This is **not** an intrusion detector and does not block traffic.
+
+## Major components / technology stack
+
+| Module | Role |
+|--------|------|
+| `app/capture` | Scapy live capture + synthetic fixtures |
+| `app/features` | Flow aggregation + 11-feature vectors |
+| `app/detection` | Isolation Forest, risk scoring, predictor, live detector |
+| `app/alerts` | High-risk alert generation (no blocking) |
+| `app/database` | SQLite (`data/ids.db` by default) |
+| `app/api` | FastAPI (`API_PORT` default **8000**) |
+| `app/dashboard` | Streamlit SOC dashboard (port **8502**) |
+| `app/explainability` | `local_baseline_occlusion` |
+| `app/evaluation` | Controlled synthetic offline evaluation |
+| `app/firewall` | Read-only Windows firewall posture checker |
+| `app/data` | Phase 2 CSV preprocessing (still available) |
+
+Stack: Python, FastAPI, Streamlit, scikit-learn IsolationForest, SQLite, Scapy (live only), Plotly.
 
 ## Project objective
 
-Build an IDS pipeline:
+Build an IDS **monitoring** pipeline:
 
 ```text
 Network Traffic → Scapy Capture → Flow Aggregation → Feature Extraction
 → Isolation Forest → NORMAL/ANOMALOUS → Risk Score → Alert → Dashboard
 ```
-
-## Architecture
-
-| Module | Role |
-|--------|------|
-| `app/capture` | Scapy live capture + synthetic fixtures |
-| `app/features` | Flow aggregation + feature vectors |
-| `app/detection` | Isolation Forest, risk scoring, predictor, live detector |
-| `app/alerts` | High-risk alert generation (no blocking) |
-| `app/database` | SQLite persistence |
-| `app/api` | FastAPI endpoints |
-| `app/dashboard` | Streamlit SOC dashboard (API client + charts) |
-| `app/explainability` | Local baseline-occlusion explanations |
-| `app/evaluation` | Controlled synthetic offline evaluation |
-| `app/data` | Phase 2 CSV preprocessing (still available) |
 
 ## How the IDS works
 
@@ -130,6 +192,7 @@ GET  /api/alerts
 GET  /api/flows
 GET  /api/explanation/{flow_id}
 GET  /api/evaluation
+GET  /api/firewall
 POST /api/capture/start
 POST /api/capture/stop
 POST /api/detection/test
@@ -185,19 +248,59 @@ XAI, or Phase 7 evaluation methodology.
 Limitations: local lab prototype, no authn/authz gateway, SQLite file DB, joblib
 model load still trusts a local artifact, live capture still needs Npcap/admin.
 
+## XAI methodology
+
+`GET /api/explanation/{flow_id}` explains a **persisted** flow with
+`local_baseline_occlusion` against the loaded IsolationForest (no retrain).
+
+Positive contribution: the feature moved the local score toward anomalous
+behavior. This is a deterministic local approximation — **not** causal
+attribution and **not** exact Shapley/SHAP values.
+
+## Phase 9 — Read-only Windows Firewall posture
+
+`GET /api/firewall` runs a **read-only** collector:
+
+```text
+netsh advfirewall show allprofiles
+```
+
+No `set` / `add` / `delete` / `reset` / `enable` / `disable`. No API input is
+interpolated into a shell command. The checker is a host **configuration posture**
+review, not an intrusion detector, and it does not modify or block traffic.
+
+Dashboard copy: *Read-only security posture assessment — no firewall changes are performed.*
+
+## Phase 10 — Security intelligence integration
+
+The SOC dashboard composes existing APIs into one analyst workflow:
+
+1. Security Intelligence Overview
+2. Detection & Risk
+3. Security Investigation
+4. AI Explanation
+5. Firewall Security Posture
+6. Security Event Timeline (stored events only; no fabricated incidents)
+7. IDS Evaluation (controlled synthetic)
+8. Safe Demonstration (`POST /api/detection/test` + explanation + firewall GET)
+9. System / Live Capture Status
+
+The **Run Security Demonstration** button uses the existing synthetic fixture
+path only (no packet injection, scanning, or firewall changes).
+
 ## Streamlit dashboard
 
 ```bash
-# 1) Start the Phase 5 API on the intended port (8000)
+# 1) Start the API on the intended port (8000)
 uvicorn app.main:app --host 127.0.0.1 --port 8000
 
 # 2) Start the SOC dashboard
 streamlit run app/dashboard/streamlit_app.py --server.port 8502
 ```
 
-`API_PORT` / `DASHBOARD_API_URL` default to port **8000**.
+`API_PORT` / `DASHBOARD_API_URL` default to port **8000**. Dashboard port **8502**.
 
-If `/api/model` returns **404**, an older Phase 3 uvicorn is still bound to 8000.
+If `/api/model` returns **404**, an older uvicorn is still bound to 8000.
 Identify it, then stop only that project process:
 
 ```powershell
@@ -207,11 +310,13 @@ Stop-Process -Id <PID> -Force
 uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
-Shows SOC-style system health, anomaly rate, risk distribution, flow/risk
-timelines, filters, auto-refresh, LIVE/SYNTHETIC controls, and model metadata.
+Dashboard capabilities: unified overview, investigation of existing flows,
+local XAI, read-only firewall posture, event timeline, Phase 7 evaluation,
+safe synthetic demonstration, and live/synthetic capture controls.
 
 Detects deviations from a learned baseline of network-flow behavior — not named
-attack classes.
+attack classes. SYNTHETIC mode does not require Npcap. LIVE mode reports Npcap /
+permission limits without blocking the rest of the dashboard.
 
 ## Safe test mode
 
@@ -278,14 +383,31 @@ This local prototype:
 - Detects deviations from a learned baseline of network-flow behavior
 - Current IsolationForest was trained on **synthetic** normal baseline traffic
 - Does **not** claim live traffic is accurately classified as DDoS, DoS, Mirai, etc.
-- Does **not** claim perfect attack detection
+- Does **not** claim 100% attack detection or comprehensive malware detection
 - Does **not** attribute exact attack names
-- Is **not** production-grade protection
+- Is **not** production-grade protection or an enterprise SIEM replacement
 - Does **not** guarantee detection of every attack
+- Does **not** automatically change or protect via Windows Firewall
 - Synthetic fixtures are insufficient for production IDS claims
 - Phase 7 metrics (accuracy / precision / recall / F1 / etc.) apply **only** to the
   controlled synthetic labeled evaluation set and must not be read as production
-  IDS performance or named-attack detection rates
+  IDS performance, real-world accuracy, or named-attack detection rates
+
+## Ethical / safety boundaries
+
+Observe → analyze → detect → log → alert → explain → (optional) read-only
+firewall review.
+
+No exploitation, credential theft, malware, evasion, packet injection, port
+scanning, traffic manipulation, or automatic host blocking. Firewall assessment
+never enables, disables, adds, deletes, or resets rules.
+
+## Future scope
+
+Possible later work (not implemented in Phase 10): stronger authentication,
+richer telemetry sources, additional read-only host checks, and evaluation on
+authorized labeled datasets. Any future blocking would require a separate,
+explicitly scoped defensive design — it is out of scope here.
 
 ## Security posture
 

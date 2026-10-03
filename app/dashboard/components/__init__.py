@@ -10,6 +10,13 @@ import streamlit as st
 
 from app.dashboard.components.evaluation import render_evaluation_panel
 from app.dashboard.components.firewall import render_firewall_panel
+from app.dashboard.components.intelligence import (
+    render_firewall_findings_brief,
+    render_safe_demonstration,
+    render_security_investigation,
+    render_security_overview,
+    render_security_timeline,
+)
 from app.dashboard.services.metrics import TIME_RANGE_MINUTES
 
 logger = logging.getLogger(__name__)
@@ -19,12 +26,17 @@ __all__ = [
     "render_capture_controls",
     "render_evaluation_panel",
     "render_explanation_panel",
+    "render_firewall_findings_brief",
     "render_firewall_panel",
     "render_flows_table",
     "render_header",
     "render_health_panel",
     "render_metric_cards",
     "render_model_panel",
+    "render_safe_demonstration",
+    "render_security_investigation",
+    "render_security_overview",
+    "render_security_timeline",
     "render_sidebar_filters",
     "render_synthetic_controls",
     "render_system_state",
@@ -39,11 +51,13 @@ def render_header() -> None:
             AI-POWERED IoT INTRUSION DETECTION SYSTEM
           </h1>
           <p style="margin:0.35rem 0 0 0;color:#475569;font-size:1.05rem;">
-            Real-Time Network Anomaly Monitoring &amp; Risk Analysis
+            AI-powered IoT security monitoring prototype
           </p>
           <p style="margin:0.4rem 0 0 0;color:#64748b;font-size:0.9rem;">
-            Detects deviations from a learned baseline of network-flow behavior
-            (not named attack classification).
+            Detects anomalous network behavior with Isolation Forest, assigns risk,
+            generates alerts, provides local explainability, and performs read-only
+            Windows Firewall posture assessment. Not named-attack classification,
+            not a production IDS, and not an enterprise SIEM replacement.
           </p>
         </div>
         """,

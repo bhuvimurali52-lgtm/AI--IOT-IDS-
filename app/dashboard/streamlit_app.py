@@ -23,12 +23,17 @@ from app.dashboard.components import (
     render_capture_controls,
     render_evaluation_panel,
     render_explanation_panel,
+    render_firewall_findings_brief,
     render_firewall_panel,
     render_flows_table,
     render_header,
     render_health_panel,
     render_metric_cards,
     render_model_panel,
+    render_safe_demonstration,
+    render_security_investigation,
+    render_security_overview,
+    render_security_timeline,
     render_sidebar_filters,
     render_synthetic_controls,
     render_system_state,
@@ -92,8 +97,8 @@ def main() -> None:
     st.sidebar.caption(f"API: `{settings.resolved_dashboard_api_url()}`")
     st.sidebar.caption(
         "Start FastAPI with the same API_PORT as DASHBOARD_API_URL. "
-        "If /api/model returns 404, a stale Phase 3 process is likely on that port — "
-        "stop it and restart uvicorn with the current Phase 5 code."
+        "If /api/model returns 404, a stale process is likely on that port — "
+        "stop it and restart uvicorn with the current code."
     )
 
     refresh_seconds = int(filters["refresh_seconds"])
@@ -108,6 +113,7 @@ def main() -> None:
         )
         render_system_state({}, api_online=False)
         render_health_panel({}, api_online=False)
+        render_security_overview({}, [], [], api_online=False)
         render_metric_cards(
             {
                 "total_flows": 0,
@@ -118,12 +124,16 @@ def main() -> None:
             },
             0,
         )
+        st.subheader("System / Live Capture Status")
         left, right = st.columns(2)
         with left:
             render_capture_controls(client, {}, api_online=False)
         with right:
             render_synthetic_controls(client, api_online=False)
+        render_safe_demonstration(client, api_online=False)
         render_firewall_panel(client, api_online=False)
+        render_security_investigation(client, [], api_online=False)
+        render_security_timeline([], [])
         st.info("No network flows detected yet.")
         st.info("No alerts detected.")
         return
@@ -138,12 +148,18 @@ def main() -> None:
     render_system_state(status, api_online=True)
     render_health_panel(status, api_online=True)
 
+    st.subheader("System / Live Capture Status")
     left, right = st.columns(2)
     with left:
         render_capture_controls(client, status, api_online=True)
     with right:
         render_synthetic_controls(client, api_online=True)
+    render_safe_demonstration(client, api_online=True)
     render_firewall_panel(client, api_online=True)
+    fw_cached = st.session_state.get("fw_assessment")
+    if isinstance(fw_cached, dict):
+        render_firewall_findings_brief(fw_cached)
+    render_security_investigation(client, flows_raw, api_online=True)
 
     def _render_body() -> None:
         _api_online, _status, _model, flows_raw2, alerts_raw2, _error = _safe_load(client)
@@ -177,6 +193,17 @@ def main() -> None:
             alerts = [a for a in alerts if str(a.get("mode")).upper() == "LIVE"]
 
         metrics = summarize_metrics(flows)
+        render_security_overview(
+            status_src,
+            flows,
+            alerts,
+            api_online=True,
+            firewall=st.session_state.get("fw_assessment")
+            if isinstance(st.session_state.get("fw_assessment"), dict)
+            else None,
+        )
+
+        st.subheader("Detection & Risk")
         render_metric_cards(metrics, alert_count=len(alerts))
 
         if str(status_src.get("ids_mode", "")).lower() == "synthetic" or any(
@@ -212,6 +239,16 @@ def main() -> None:
         render_alerts_table(alerts)
         render_flows_table(flows)
         render_explanation_panel(client, flows)
+        render_security_timeline(
+            flows,
+            alerts,
+            explanation=st.session_state.get("inv_explanation")
+            if isinstance(st.session_state.get("inv_explanation"), dict)
+            else None,
+            firewall=st.session_state.get("fw_assessment")
+            if isinstance(st.session_state.get("fw_assessment"), dict)
+            else None,
+        )
         render_evaluation_panel(client, api_online=True)
         render_model_panel(model_src or status_src)
 

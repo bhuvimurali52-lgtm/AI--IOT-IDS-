@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     )
 
     app_name: str = "AI-Powered IoT Intrusion Detection"
-    app_version: str = "0.8.0"
+    app_version: str = "0.10.0"
     app_env: str = Field(
         default="development",
         validation_alias=AliasChoices("APP_ENV", "ENVIRONMENT"),
