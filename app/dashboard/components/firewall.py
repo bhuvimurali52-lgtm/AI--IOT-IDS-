@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 
 def render_firewall_panel(client: Any, *, api_online: bool) -> None:
-    st.subheader("Firewall Security Posture")
+    st.subheader("🔥 WINDOWS FIREWALL SECURITY POSTURE")
     st.caption(
         "Read-only security posture assessment \u2014 no firewall changes are performed."
     )
@@ -21,6 +21,8 @@ def render_firewall_panel(client: Any, *, api_online: bool) -> None:
         "replacement for enterprise firewall management, SIEM, EDR, or a "
         "certified vulnerability assessment."
     )
+    st.markdown("### 🔒 READ-ONLY AUDIT")
+    st.caption("RUN FIREWALL AUDIT")
 
     run = st.button(
         "Run firewall posture audit",
@@ -42,6 +44,7 @@ def render_firewall_panel(client: Any, *, api_online: bool) -> None:
         st.info("Run the audit to display firewall posture findings.")
         return
 
+    st.markdown("**OVERALL POSTURE**")
     m1, m2, m3, m4 = st.columns(4)
     m1.metric("Firewall available", str(result.get("firewall_available")))
     m2.metric("Overall severity", result.get("overall_severity", "\u2014"))
@@ -68,6 +71,18 @@ def render_firewall_panel(client: Any, *, api_online: bool) -> None:
         )
 
     findings = result.get("findings") or []
+    if profiles:
+        named = {str(p.get("name") or "").strip().title(): p for p in profiles}
+        c_dom, c_pri, c_pub = st.columns(3)
+        for col, name in ((c_dom, "Domain"), (c_pri, "Private"), (c_pub, "Public")):
+            p = named.get(name) or {}
+            with col:
+                st.markdown(f"**{name} Profile**")
+                st.write(f"Enabled: `{p.get('enabled', '—')}`")
+                st.write(f"Inbound default: `{p.get('inbound_default', '—')}`")
+                st.write(f"Outbound default: `{p.get('outbound_default', '—')}`")
+
+    st.markdown("**FINDINGS / SEVERITY**")
     if findings:
         st.markdown("**Security posture findings**")
         table = [

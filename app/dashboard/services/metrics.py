@@ -16,6 +16,7 @@ TIME_RANGE_MINUTES: dict[str, int] = {
     "Last 15 minutes": 15,
     "Last 1 hour": 60,
     "Last 24 hours": 1440,
+    "All time": 0,
 }
 
 SEVERITY_ORDER = ("LOW", "MEDIUM", "HIGH", "CRITICAL")
@@ -115,7 +116,7 @@ def filter_records(
     """Filter flow/alert records by mode, severity, and time window."""
     current = now or datetime.now(timezone.utc)
     minutes = TIME_RANGE_MINUTES.get(time_range_label, 1440)
-    cutoff = current - timedelta(minutes=minutes)
+    cutoff = None if int(minutes) <= 0 else current - timedelta(minutes=minutes)
     mode_key = str(mode).upper()
     sev_key = str(severity).upper()
     out: list[dict[str, Any]] = []
@@ -132,7 +133,9 @@ def filter_records(
         if sev_key != "ALL" and row_sev.upper() != sev_key:
             continue
         ts = parse_timestamp(row.get("timestamp"))
-        if ts is None or ts < cutoff:
+        if ts is None:
+            continue
+        if cutoff is not None and ts < cutoff:
             continue
         row["_ts"] = ts
         feats = parse_features(row)

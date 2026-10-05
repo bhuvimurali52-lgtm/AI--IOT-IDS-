@@ -92,6 +92,28 @@ def test_filter_time_and_severity() -> None:
     assert filtered[0]["severity"].upper() == "CRITICAL"
 
 
+def test_filter_all_time_keeps_historical_records() -> None:
+    now = datetime.now(timezone.utc)
+    rows = [
+        {
+            "timestamp": (now - timedelta(days=20)).isoformat(),
+            "mode": "SYNTHETIC",
+            "severity": "High",
+            "risk_score": 74,
+            "is_anomaly": 1,
+        }
+    ]
+    hidden = filter_records(
+        rows, mode="ALL", severity="ALL", time_range_label="Last 24 hours", now=now
+    )
+    kept = filter_records(
+        rows, mode="ALL", severity="ALL", time_range_label="All time", now=now
+    )
+    assert hidden == []
+    assert len(kept) == 1
+    assert kept[0]["risk_score"] == 74
+
+
 def test_severity_distribution_and_summary() -> None:
     rows = [
         {"severity": "Low", "risk_score": 10, "is_anomaly": 0},

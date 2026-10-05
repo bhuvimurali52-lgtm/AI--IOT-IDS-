@@ -14,6 +14,8 @@ from app.dashboard.services.intelligence import (
     build_timeline,
     firewall_recommendations,
     flow_feature_view,
+    rank_flows_for_investigation,
+    record_ids,
     run_safe_demonstration,
     select_anomalous_flow,
 )
@@ -299,12 +301,26 @@ def test_no_firewall_modification_in_phase10_sources() -> None:
     ):
         assert banned not in combined.lower()
     assert "Run Security Demonstration" in ui
+    assert "RUN SECURITY DEMO" in ui
     assert "Security Intelligence Overview" in ui
     assert "Security Investigation" in ui
 
 
+def test_investigation_ranks_newest_high_risk_first() -> None:
+    older = _sample_flow(id=1, risk_score=90, timestamp="2026-01-01T00:00:00+00:00")
+    newer = _sample_flow(id=9, risk_score=90, timestamp="2026-10-03T12:00:00+00:00")
+    normal = _sample_flow(id=8, is_anomaly=0, risk_score=10, timestamp="2026-10-03T13:00:00+00:00")
+    ranked = rank_flows_for_investigation([older, normal, newer])
+    assert [row["id"] for row in ranked] == [9, 1, 8]
+    chosen = select_anomalous_flow([older, normal, newer])
+    assert chosen is not None
+    assert chosen["id"] == 9
+    assert record_ids([older, newer, {"id": "nope"}]) == {1, 9}
+
+
 def test_dashboard_phase10_imports_and_keys() -> None:
     from app.dashboard.components import (
+        render_run_security_demo,
         render_safe_demonstration,
         render_security_investigation,
         render_security_overview,
@@ -315,10 +331,12 @@ def test_dashboard_phase10_imports_and_keys() -> None:
     assert callable(main)
     assert callable(render_security_overview)
     assert callable(render_security_investigation)
+    assert callable(render_run_security_demo)
     assert callable(render_safe_demonstration)
     assert callable(render_security_timeline)
     keys = [
         "safe_demo_btn",
+        "run_security_demo_btn",
         "inv_flow_select",
         "inv_xai_btn",
         "security_event_timeline",
@@ -330,8 +348,10 @@ def test_dashboard_phase10_imports_and_keys() -> None:
     src = Path("app/dashboard/streamlit_app.py").read_text(encoding="utf-8")
     assert "render_security_overview" in src
     assert "render_safe_demonstration" in src
+    assert "render_run_security_demo" in src
     body = src[src.find("def _render_body") : src.find("if refresh_seconds")]
     assert "run_safe_demonstration" not in body
+    assert "render_run_security_demo" not in body
     assert "client.firewall()" not in body
 
 

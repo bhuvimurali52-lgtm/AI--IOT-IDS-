@@ -12,16 +12,38 @@ from app.dashboard.components.evaluation import render_evaluation_panel
 from app.dashboard.components.firewall import render_firewall_panel
 from app.dashboard.components.intelligence import (
     render_firewall_findings_brief,
+    render_run_security_demo,
     render_safe_demonstration,
     render_security_investigation,
     render_security_overview,
     render_security_timeline,
 )
+from app.dashboard.nav import (
+    AUTO_REFRESH_PAGES,
+    NAV_EVALUATION,
+    NAV_FIREWALL,
+    NAV_INVESTIGATION,
+    NAV_OVERVIEW,
+    NAV_PAGES,
+    NAV_SYSTEM,
+    NAV_THREAT,
+    NAV_XAI,
+)
 from app.dashboard.services.metrics import TIME_RANGE_MINUTES
+from app.dashboard.theme import badge_class, inject_command_center_theme
 
 logger = logging.getLogger(__name__)
 
 __all__ = [
+    "NAV_EVALUATION",
+    "NAV_FIREWALL",
+    "NAV_INVESTIGATION",
+    "NAV_OVERVIEW",
+    "NAV_PAGES",
+    "NAV_SYSTEM",
+    "NAV_THREAT",
+    "NAV_XAI",
+    "AUTO_REFRESH_PAGES",
     "render_alerts_table",
     "render_capture_controls",
     "render_evaluation_panel",
@@ -33,6 +55,7 @@ __all__ = [
     "render_health_panel",
     "render_metric_cards",
     "render_model_panel",
+    "render_run_security_demo",
     "render_safe_demonstration",
     "render_security_investigation",
     "render_security_overview",
@@ -43,26 +66,42 @@ __all__ = [
 ]
 
 
-def render_header() -> None:
+def render_header(
+    status: Mapping[str, Any] | None = None,
+    *,
+    api_online: bool = False,
+) -> None:
+    inject_command_center_theme()
+    status = status or {}
+    model_ok = bool(status.get("model_loaded")) and api_online
+    db_raw = str(status.get("database_status") or "").lower()
+    db_ok = api_online and (
+        db_raw in {"ok", "connected", ""} or (status.get("database_status") is None and bool(status))
+    )
+    capture_running = bool(status.get("capture_running"))
+    mode = str(status.get("ids_mode") or "synthetic").upper()
+    if mode not in {"LIVE", "SYNTHETIC"}:
+        mode = "SYNTHETIC"
     st.markdown(
         """
-        <div style="padding:0.25rem 0 0.75rem 0;">
-          <h1 style="margin:0;letter-spacing:0.04em;font-size:1.85rem;">
-            AI-POWERED IoT INTRUSION DETECTION SYSTEM
-          </h1>
-          <p style="margin:0.35rem 0 0 0;color:#475569;font-size:1.05rem;">
-            AI-powered IoT security monitoring prototype
-          </p>
-          <p style="margin:0.4rem 0 0 0;color:#64748b;font-size:0.9rem;">
-            Detects anomalous network behavior with Isolation Forest, assigns risk,
-            generates alerts, provides local explainability, and performs read-only
-            Windows Firewall posture assessment. Not named-attack classification,
-            not a production IDS, and not an enterprise SIEM replacement.
-          </p>
-        </div>
+        <p class="soc-title">🛡 AI-IOT SECURITY COMMAND CENTER</p>
+        <p class="soc-sub">Intelligent anomaly detection • Explainable risk analysis • Firewall security posture</p>
+        <p class="soc-disclaimer">
+          Anomaly detection based on learned flow behavior; not named-attack classification
+          and not a production IDS or enterprise SIEM replacement.
+        </p>
         """,
         unsafe_allow_html=True,
     )
+    badges = (
+        f'<span class="{badge_class(model_ok)}" role="status">MODEL: {"LOADED" if model_ok else "NOT LOADED"}</span>'
+        f'<span class="{badge_class(api_online)}" role="status">API: {"ONLINE" if api_online else "OFFLINE"}</span>'
+        f'<span class="{badge_class(db_ok)}" role="status">DATABASE: {"CONNECTED" if db_ok else "DISCONNECTED"}</span>'
+        f'<span class="{badge_class(not capture_running, warn=capture_running)}" role="status">'
+        f'CAPTURE: {"RUNNING" if capture_running else "STOPPED"}</span>'
+        f'<span class="soc-badge soc-info" role="status">MODE: {mode}</span>'
+    )
+    st.markdown(f'<div class="soc-badge-row">{badges}</div>', unsafe_allow_html=True)
 
 
 def render_system_state(status: Mapping[str, Any], *, api_online: bool) -> None:
@@ -100,8 +139,19 @@ def render_health_panel(status: Mapping[str, Any], *, api_online: bool) -> None:
     )
 
 
-def render_metric_cards(metrics: Mapping[str, Any], alert_count: int) -> None:
+def render_metric_cards(
+    metrics: Mapping[str, Any],
+    alert_count: int,
+    *,
+    api_online: bool = True,
+) -> None:
     st.subheader("Operational Metrics")
+    if not api_online:
+        st.error(
+            "FastAPI is unavailable. Metric cards are hidden so zeros are not shown "
+            "as if the database were empty."
+        )
+        return
     m1, m2, m3, m4, m5, m6 = st.columns(6)
     m1.metric("Total Flows", int(metrics.get("total_flows", 0)))
     m2.metric("Normal Flows", int(metrics.get("normal_flows", 0)))
@@ -112,23 +162,42 @@ def render_metric_cards(metrics: Mapping[str, Any], alert_count: int) -> None:
 
 
 def render_sidebar_filters() -> dict[str, Any]:
-    st.sidebar.header("Filters")
-    mode = st.sidebar.selectbox("Mode", ["ALL", "LIVE", "SYNTHETIC"], index=0)
+    st.sidebar.markdown("### 🛡 AI-IOT SECURITY COMMAND CENTER")
+    st.sidebar.caption("Navigation controls the displayed section only.")
+    page = st.sidebar.radio("Navigation", list(NAV_PAGES), index=0, key="soc_nav")
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("Display filters")
+    st.sidebar.caption(
+        "These filters change what is shown. They do not change IDS capture mode."
+    )
+    data_filter_label = st.sidebar.selectbox(
+        "Data filter",
+        ["All", "Synthetic", "Live"],
+        index=0,
+        key="data_filter",
+        help="ALL / SYNTHETIC / LIVE records in the dashboard. Not IDS_MODE.",
+    )
+    data_map = {"All": "ALL", "Synthetic": "SYNTHETIC", "Live": "LIVE"}
     severity = st.sidebar.selectbox(
         "Severity",
         ["ALL", "LOW", "MEDIUM", "HIGH", "CRITICAL"],
         index=0,
+        key="severity_filter",
     )
+    time_range_options = list(TIME_RANGE_MINUTES.keys())
     time_range = st.sidebar.selectbox(
         "Time range",
-        list(TIME_RANGE_MINUTES.keys()),
-        index=3,
+        time_range_options,
+        index=time_range_options.index("All time"),
+        key="soc_time_range",
     )
-    st.sidebar.header("Auto-refresh")
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("Auto-refresh")
     refresh_label = st.sidebar.selectbox(
         "Refresh interval",
         ["OFF", "5 seconds", "10 seconds", "30 seconds"],
         index=2,
+        key="refresh_interval",
     )
     refresh_map = {
         "OFF": 0,
@@ -137,7 +206,8 @@ def render_sidebar_filters() -> dict[str, Any]:
         "30 seconds": 30,
     }
     return {
-        "mode": mode,
+        "page": page,
+        "mode": data_map[data_filter_label],
         "severity": severity,
         "time_range": time_range,
         "refresh_seconds": refresh_map[refresh_label],
@@ -243,9 +313,9 @@ def render_capture_controls(
 
 
 def render_synthetic_controls(client: Any, *, api_online: bool) -> None:
-    st.subheader("Synthetic Test")
+    st.subheader("SAFE SYNTHETIC TEST")
     st.caption(
-        "SAFE TEST — generates local fixtures only. Not real network traffic."
+        "Generates local synthetic fixtures only. No real network traffic."
     )
     if st.button(
         "RUN SYNTHETIC TEST",
@@ -289,6 +359,27 @@ def render_model_panel(model: Mapping[str, Any]) -> None:
         st.caption(str(model["limitation"]))
 
 
+def _is_demo_record(row: Mapping[str, Any]) -> bool:
+    started = str(st.session_state.get("demo_started_at") or "")
+    if started:
+        ts = str(row.get("timestamp") or "")
+        mode = str(row.get("mode") or "").upper()
+        if ts and ts >= started and mode in {"", "SYNTHETIC"}:
+            return True
+    raw_ids = st.session_state.get("demo_new_flow_ids") or []
+    ids: set[int] = set()
+    for value in raw_ids:
+        try:
+            ids.add(int(value))
+        except (TypeError, ValueError):
+            continue
+    try:
+        rid = int(row.get("id")) if row.get("id") is not None else None
+    except (TypeError, ValueError):
+        rid = None
+    return rid in ids if rid is not None else False
+
+
 def render_alerts_table(alerts: Sequence[Mapping[str, Any]]) -> None:
     st.subheader("Recent Alerts")
     if not alerts:
@@ -297,8 +388,11 @@ def render_alerts_table(alerts: Sequence[Mapping[str, Any]]) -> None:
     rows = []
     for a in alerts:
         sev = str(a.get("severity") or "").upper()
+        is_new = _is_demo_record(a)
         rows.append(
             {
+                "ID": a.get("id"),
+                "New": "DEMO" if is_new else "",
                 "Time": a.get("timestamp"),
                 "Source": a.get("source_ip"),
                 "Destination": a.get("destination_ip"),
@@ -308,8 +402,10 @@ def render_alerts_table(alerts: Sequence[Mapping[str, Any]]) -> None:
                 "Severity": a.get("severity"),
                 "Mode": a.get("mode"),
                 "_sev": sev,
+                "_new": "DEMO" if is_new else "",
             }
         )
+    rows.sort(key=lambda r: (r["_new"] == "DEMO", str(r.get("Time") or "")), reverse=True)
     frame = pd.DataFrame(rows)
 
     def _style_severity(series: pd.Series) -> list[str]:
@@ -324,9 +420,17 @@ def render_alerts_table(alerts: Sequence[Mapping[str, Any]]) -> None:
                 styles.append("")
         return styles
 
-    display = frame.drop(columns=["_sev"])
+    def _style_new(series: pd.Series) -> list[str]:
+        return [
+            "background-color: #fde68a; font-weight: 700;" if str(val) == "DEMO" else ""
+            for val in series
+        ]
+
+    display = frame.drop(columns=["_sev", "_new"])
     try:
-        styled = display.style.apply(_style_severity, subset=["Severity"])
+        styled = display.style.apply(_style_severity, subset=["Severity"]).apply(
+            _style_new, subset=["New"]
+        )
         st.dataframe(styled, use_container_width=True, hide_index=True)
     except Exception:  # noqa: BLE001
         st.dataframe(display, use_container_width=True, hide_index=True)
@@ -340,8 +444,12 @@ def render_flows_table(flows: Sequence[Mapping[str, Any]]) -> None:
     rows = []
     for f in flows:
         is_anom = f.get("is_anomaly") in (1, True, "1", "true", "True")
+        is_new = _is_demo_record(f)
+        sev = str(f.get("severity") or "").upper()
         rows.append(
             {
+                "ID": f.get("id"),
+                "New": "DEMO" if is_new else "",
                 "Timestamp": f.get("timestamp"),
                 "Source IP": f.get("source_ip"),
                 "Destination IP": f.get("destination_ip"),
@@ -353,38 +461,98 @@ def render_flows_table(flows: Sequence[Mapping[str, Any]]) -> None:
                 "Risk": f.get("risk_score"),
                 "Severity": f.get("severity"),
                 "Mode": f.get("mode"),
+                "_anom": is_anom,
+                "_sev": sev,
+                "_new": is_new,
             }
         )
-    st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+    rows.sort(
+        key=lambda r: (
+            bool(r["_new"]),
+            bool(r["_anom"]),
+            int(r.get("Risk") or 0),
+            str(r.get("Timestamp") or ""),
+        ),
+        reverse=True,
+    )
+    frame = pd.DataFrame(rows)
+
+    def _style_anomaly(series: pd.Series) -> list[str]:
+        styles = []
+        for val in series:
+            if str(val).upper() == "YES":
+                styles.append("background-color: #ffedd5; font-weight: 700;")
+            else:
+                styles.append("")
+        return styles
+
+    def _style_severity(series: pd.Series) -> list[str]:
+        styles = []
+        for val in series:
+            u = str(val).upper()
+            if u == "CRITICAL":
+                styles.append("background-color: #fecaca; font-weight: 700;")
+            elif u == "HIGH":
+                styles.append("background-color: #ffedd5; font-weight: 600;")
+            else:
+                styles.append("")
+        return styles
+
+    def _style_new(series: pd.Series) -> list[str]:
+        return [
+            "background-color: #fde68a; font-weight: 700;" if str(val) == "DEMO" else ""
+            for val in series
+        ]
+
+    display = frame.drop(columns=["_anom", "_sev", "_new"])
+    try:
+        styled = (
+            display.style.apply(_style_anomaly, subset=["Anomaly"])
+            .apply(_style_severity, subset=["Severity"])
+            .apply(_style_new, subset=["New"])
+        )
+        st.dataframe(styled, use_container_width=True, hide_index=True)
+    except Exception:  # noqa: BLE001
+        st.dataframe(display, use_container_width=True, hide_index=True)
 
 
 def render_explanation_panel(client: Any, flows: Sequence[Mapping[str, Any]]) -> None:
     """AI Explanation section for a selected flow."""
     from app.dashboard.charts import explanation_contribution_figure
 
-    st.subheader("AI Explanation")
+    st.subheader("🧠 WHY WAS THIS FLOW FLAGGED?")
     st.caption(
-        "Local baseline-occlusion explanation of the IsolationForest anomaly "
-        "score for the selected flow. Approximation only — not causal "
-        "attribution and not named-attack classification."
+        "Positive contribution indicates that the feature increased deviation "
+        "from the learned normal baseline. This is a local baseline-occlusion "
+        "explanation, not a causal or exact Shapley attribution. "
+        "Anomalous selections load the existing /api/explanation immediately."
     )
     if not flows:
         st.info("No network flows detected yet.")
         return
 
+    from app.dashboard.services.intelligence import rank_flows_for_investigation
+
+    ranked = rank_flows_for_investigation(flows)
+    demo_ids = {int(x) for x in (st.session_state.get("demo_new_flow_ids") or []) if str(x).isdigit() or isinstance(x, int)}
     labeled = []
-    for f in flows:
+    for f in ranked:
         fid = f.get("id")
         if fid is None:
             continue
         is_anom = f.get("is_anomaly") in (1, True, "1", "true", "True")
         tag = "ANOMALOUS" if is_anom else "NORMAL"
+        try:
+            fid_int = int(fid)
+        except (TypeError, ValueError):
+            continue
+        marker = " | DEMO NEW" if fid_int in demo_ids else ""
         mode = f.get("mode", "")
         labeled.append(
             (
-                f"#{fid} | {tag} | {f.get('source_ip')} → {f.get('destination_ip')} | "
+                f"#{fid} | {tag}{marker} | {f.get('source_ip')} → {f.get('destination_ip')} | "
                 f"{mode} | risk={f.get('risk_score')}",
-                int(fid),
+                fid_int,
                 is_anom,
             )
         )
@@ -395,18 +563,30 @@ def render_explanation_panel(client: Any, flows: Sequence[Mapping[str, Any]]) ->
     anomalous_opts = [item for item in labeled if item[2]]
     options = anomalous_opts or labeled
     labels = [item[0] for item in options]
+    preferred = st.session_state.get("xai_flow_id")
+    index = 0
+    if preferred is not None:
+        for i, item in enumerate(options):
+            if item[1] == int(preferred):
+                index = i
+                break
+    if st.session_state.pop("xai_select_pending", False) and labels:
+        st.session_state["xai_flow_select"] = labels[index]
     selected_label = st.selectbox(
         "Select flow to explain",
         labels,
-        index=0,
+        index=index,
         key="xai_flow_select",
     )
     selected_id = next(item[1] for item in options if item[0] == selected_label)
+    selected_anom = next(item[2] for item in options if item[0] == selected_label)
 
     if st.button("Explain selected flow", key="xai_explain_btn"):
         st.session_state["xai_flow_id"] = selected_id
 
-    flow_id = st.session_state.get("xai_flow_id", selected_id)
+    flow_id = selected_id if selected_anom else st.session_state.get("xai_flow_id", selected_id)
+    if selected_anom:
+        st.session_state["xai_flow_id"] = selected_id
     try:
         payload = client.explanation(int(flow_id))
     except Exception as exc:  # noqa: BLE001

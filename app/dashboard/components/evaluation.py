@@ -15,8 +15,8 @@ def render_evaluation_panel(client: Any, *, api_online: bool) -> None:
     """Controlled synthetic offline evaluation section."""
     from app.dashboard.charts import threshold_analysis_figure
 
+    st.markdown("### CONTROLLED SYNTHETIC EVALUATION")
     st.subheader("IDS Evaluation")
-    st.markdown("### Controlled Synthetic Evaluation")
     st.warning(
         "These metrics measure performance on the controlled synthetic "
         "evaluation dataset and should not be interpreted as production "

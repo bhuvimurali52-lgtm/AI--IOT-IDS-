@@ -20,7 +20,7 @@ def _empty_figure(message: str) -> go.Figure:
         x=0.5,
         y=0.5,
         showarrow=False,
-        font={"size": 14, "color": "#64748b"},
+        font={"size": 14, "color": "#94a3b8"},
     )
     fig.update_layout(
         xaxis={"visible": False},
@@ -29,6 +29,21 @@ def _empty_figure(message: str) -> go.Figure:
         margin={"l": 20, "r": 20, "t": 40, "b": 20},
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
+        font={"color": "#cbd5e1"},
+    )
+    return fig
+
+
+def _console_layout(fig: go.Figure, *, height: int = 360) -> go.Figure:
+    fig.update_layout(
+        height=height,
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(15,23,42,0.35)",
+        font={"color": "#cbd5e1"},
+        legend={"orientation": "h", "font": {"color": "#e2e8f0"}},
+        margin={"l": 40, "r": 20, "t": 50, "b": 40},
+        xaxis={"gridcolor": "#1e293b", "zerolinecolor": "#1e293b"},
+        yaxis={"gridcolor": "#1e293b", "zerolinecolor": "#1e293b"},
     )
     return fig
 
@@ -90,11 +105,8 @@ def flow_timeline_figure(flows: Sequence[Mapping[str, Any]]) -> go.Figure:
         title="Real-Time Flow Timeline",
         xaxis_title="Timestamp",
         yaxis_title="Cumulative flows",
-        height=360,
-        legend={"orientation": "h"},
-        margin={"l": 40, "r": 20, "t": 50, "b": 40},
     )
-    return fig
+    return _console_layout(fig)
 
 
 def risk_timeline_figure(flows: Sequence[Mapping[str, Any]]) -> go.Figure:
@@ -125,14 +137,9 @@ def risk_timeline_figure(flows: Sequence[Mapping[str, Any]]) -> go.Figure:
         markers=True,
         title="RISK SCORE (0–100)",
     )
-    fig.update_traces(line={"color": "#b45309"})
-    fig.update_layout(
-        xaxis_title="Timestamp",
-        yaxis_title="Risk score",
-        yaxis={"range": [0, 100]},
-        height=360,
-        margin={"l": 40, "r": 20, "t": 50, "b": 40},
-    )
+    fig.update_traces(line={"color": "#f59e0b"})
+    fig = _console_layout(fig)
+    fig.update_layout(yaxis={"range": [0, 100], "gridcolor": "#1e293b"})
     return fig
 
 
@@ -165,12 +172,8 @@ def risk_distribution_figure(
         color_discrete_map=colors,
         title="Risk Distribution",
     )
-    fig.update_layout(
-        showlegend=False,
-        height=360,
-        margin={"l": 40, "r": 20, "t": 50, "b": 40},
-    )
-    return fig
+    fig.update_layout(showlegend=False)
+    return _console_layout(fig)
 
 
 def explanation_contribution_figure(
@@ -211,10 +214,8 @@ def explanation_contribution_figure(
         title="Top feature contributions (local occlusion)",
         xaxis_title="Contribution to anomaly score (approx.)",
         yaxis_title="Feature",
-        height=420,
-        margin={"l": 120, "r": 20, "t": 50, "b": 40},
     )
-    return fig
+    return _console_layout(fig, height=420)
 
 
 def threshold_analysis_figure(
@@ -246,9 +247,7 @@ def threshold_analysis_figure(
         title="Offline threshold analysis (synthetic evaluation only)",
         xaxis_title="Anomaly-score threshold",
         yaxis_title="Metric",
-        yaxis={"range": [0, 1.05]},
-        height=380,
-        legend={"orientation": "h"},
-        margin={"l": 40, "r": 20, "t": 50, "b": 40},
     )
+    fig = _console_layout(fig, height=380)
+    fig.update_layout(yaxis={"range": [0, 1.05], "gridcolor": "#1e293b"})
     return fig

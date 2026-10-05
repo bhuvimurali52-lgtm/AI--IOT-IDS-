@@ -64,29 +64,53 @@ def high_risk_alert_count(alerts: Sequence[Mapping[str, Any]]) -> int:
     )
 
 
+def _flow_risk(row: Mapping[str, Any]) -> int:
+    try:
+        return int(float(row.get("risk_score", 0) or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def investigation_sort_key(flow: Mapping[str, Any]) -> tuple[int, int, str, int]:
+    """Anomalous first, then highest risk, newest timestamp, highest id."""
+    anom = 1 if _is_anomaly(flow) else 0
+    try:
+        fid = int(flow.get("id") or 0)
+    except (TypeError, ValueError):
+        fid = 0
+    return (anom, _flow_risk(flow), str(flow.get("timestamp") or ""), fid)
+
+
+def rank_flows_for_investigation(
+    flows: Sequence[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    """Order persisted flows for investigation / XAI selection. No fabrication."""
+    rows = [dict(raw) for raw in flows if raw.get("id") is not None]
+    rows.sort(key=investigation_sort_key, reverse=True)
+    return rows
+
+
+def record_ids(records: Sequence[Mapping[str, Any]]) -> set[int]:
+    ids: set[int] = set()
+    for row in records:
+        raw = row.get("id")
+        if raw is None:
+            continue
+        try:
+            ids.add(int(raw))
+        except (TypeError, ValueError):
+            continue
+    return ids
+
+
 def select_anomalous_flow(
     flows: Sequence[Mapping[str, Any]],
 ) -> dict[str, Any] | None:
-    """Pick the highest-risk anomalous flow that has an id. No fabrication."""
-    candidates: list[dict[str, Any]] = []
-    for raw in flows:
-        if raw.get("id") is None:
-            continue
-        if not _is_anomaly(raw):
-            continue
-        try:
-            risk = int(float(raw.get("risk_score", 0) or 0))
-        except (TypeError, ValueError):
-            risk = 0
-        row = dict(raw)
-        row["_risk"] = risk
-        candidates.append(row)
-    if not candidates:
-        return None
-    candidates.sort(key=lambda r: (r["_risk"], int(r.get("id") or 0)), reverse=True)
-    chosen = dict(candidates[0])
-    chosen.pop("_risk", None)
-    return chosen
+    """Pick the newest highest-risk anomalous flow that has an id."""
+    for row in rank_flows_for_investigation(flows):
+        if _is_anomaly(row):
+            return row
+    return None
 
 
 def flow_feature_view(flow: Mapping[str, Any]) -> dict[str, Any]:
@@ -280,6 +304,7 @@ def run_safe_demonstration(client: Any) -> dict[str, Any]:
         "selected_flow": None,
         "explanation": None,
         "firewall": None,
+        "flows": [],
         "errors": [],
     }
     try:
@@ -316,4 +341,5 @@ def run_safe_demonstration(client: Any) -> dict[str, Any]:
         payload["firewall"] = {"error": "unavailable", "read_only": True}
 
     payload["ok"] = bool(payload.get("synthetic"))
+    payload["flows"] = flows
     return payload
